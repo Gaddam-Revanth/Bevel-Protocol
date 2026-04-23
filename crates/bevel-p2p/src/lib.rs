@@ -191,6 +191,29 @@ impl BevelNode {
         self.swarm.behaviour_mut().kademlia.get_record(kad_key);
     }
 
+    /// Fetches a specific media chunk from the DHT using its derived key.
+    pub fn fetch_media_chunk(&mut self, chunk_key: [u8; 32]) {
+        let kad_key = libp2p::kad::RecordKey::new(&chunk_key);
+        self.swarm.behaviour_mut().kademlia.get_record(kad_key);
+    }
+
+    /// Stores a list of pre-processed media chunks into the DHT.
+    pub fn store_media_chunks(&mut self, chunks: Vec<bevel_protocol::DmpChunk>, recipient_address: &str, message_id: [u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
+        for chunk in chunks {
+            let chunk_key = derive_chunk_dht_key(recipient_address, &message_id, chunk.chunk_index);
+            let kad_key = libp2p::kad::RecordKey::new(&chunk_key);
+            let val = serde_json::to_vec(&chunk)?;
+            let record = libp2p::kad::Record {
+                key: kad_key,
+                value: val,
+                publisher: Some(self.peer_id),
+                expires: None,
+            };
+            self.swarm.behaviour_mut().kademlia.put_record(record, libp2p::kad::Quorum::One)?;
+        }
+        Ok(())
+    }
+
     // ── Onion Routing (DMP-NET Layer 6) ───────────────────────────────────
 
     /// Build and return an onion-routed cell for the given payload.

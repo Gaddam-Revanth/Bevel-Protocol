@@ -59,6 +59,7 @@ The workspace is divided into specialized crates:
 - [**`bevel-p2p`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-p2p): libp2p integration, including DHT discovery and relay logic.
 - [**`bevel-storage`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-storage): Persistent database layer using `Sled`.
 - [**`bevel-audit`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-audit): Security verification tools and adversarial simulation.
+- [**`bevel-media`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-media): Media handling and protocol extensions for rich content.
 - [**`bevel-wasm`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-wasm): WASM bindings for web client integration.
 
 ## 🛠 Getting Started

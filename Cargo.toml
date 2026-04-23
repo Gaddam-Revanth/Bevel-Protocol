@@ -6,6 +6,7 @@ members = [
     "crates/bevel-onion",
     "crates/bevel-storage",
     "crates/bevel-audit",
+    "crates/bevel-media",
 ]
 resolver = "2"
 

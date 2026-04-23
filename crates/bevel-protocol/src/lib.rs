@@ -83,6 +83,22 @@ pub struct DmpAttachmentRef {
     pub encryption_key: String,
     pub size: u64,
     pub mime_type: String,
+    pub file_name: String,
+    pub is_folder: bool,
+}
+
+/// A manifest for a folder blob.
+/// Lists all files and their relative paths within the folder.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlobFolderManifest {
+    pub entries: Vec<BlobFolderEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlobFolderEntry {
+    pub relative_path: String,
+    pub content_hash: String, // Each file in folder is its own blob
+    pub size: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
