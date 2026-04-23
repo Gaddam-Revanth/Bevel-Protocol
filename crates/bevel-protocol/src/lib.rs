@@ -219,6 +219,38 @@ pub struct DmpReceipt {
     pub hmac: [u8; 32], // HMAC-SHA256(msg_id || timestamp, session_key)
 }
 
+/// DMP-ADDR Canonical Contact Format
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DmpContact {
+    pub dmp_address: String,
+    pub bns_handle: Option<String>,
+    pub display_name: Option<String>,
+    pub profile_picture_hash: Option<String>, // Blob hash
+    pub notes: Option<String>,
+    pub tags: Vec<String>,
+    pub last_interaction_at: u64,
+    pub is_trusted: bool,
+    pub public_identity_key: [u8; 32],
+}
+
+/// A packet for syncing data between devices sharing the same seed phrase.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DeviceSyncPacket {
+    pub device_id: String,
+    pub timestamp: u64,
+    pub payload: DeviceSyncPayload,
+    #[serde(with = "BigArray")]
+    pub signature: [u8; 64], // Signed with the shared identity key
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum DeviceSyncPayload {
+    MessageSummary(Vec<String>), // List of message IDs
+    ContactSummary(Vec<String>), // List of contact DMP addresses
+    FullMessage(DmpMessage),
+    FullContact(DmpContact),
+}
+
 /// A W3C compliant DID Document for a DMP identity.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DidDocument {
@@ -264,7 +296,59 @@ impl DidDocument {
     }
 }
 
-/// A decentralized naming record mapping a handle (user@bevel.com) to a Bevel address.
+/// Local reputation score for a contact or address.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DmpReputation {
+    pub dmp_address: String,
+    pub trust_score: i32, // -100 to 100
+    pub message_count: u64,
+    pub last_interaction_at: u64,
+    pub is_blocked: bool,
+}
+
+/// User-defined spam policy.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DmpSpamPolicy {
+    pub min_pow_difficulty: u32,
+    pub block_unknown_senders: bool,
+    pub auto_junk_threshold: i32,
+    pub trusted_domains: Vec<String>,
+}
+
+impl DmpSpamPolicy {
+    /// Returns true if a message should be classified as spam based on sender reputation and manifest.
+    pub fn is_spam(&self, reputation: &DmpReputation, manifest: &DmpMessageManifest) -> bool {
+        if reputation.is_blocked {
+            return true;
+        }
+
+        // Check PoW difficulty
+        if manifest.pow_nonce < (self.min_pow_difficulty as u64) {
+            return true;
+        }
+
+        // Check if unknown sender is blocked
+        if self.block_unknown_senders && reputation.message_count == 0 {
+            // Check if sender is trusted domain based on public key or masked id
+            // In a real implementation, we'd lookup the BNS domain for the sender_pub_key
+            let is_trusted = self.trusted_domains.iter().any(|d| {
+                reputation.dmp_address.ends_with(d) // Use the resolved address from reputation
+            });
+            if !is_trusted {
+                return true;
+            }
+        }
+
+        // Check trust score threshold
+        if reputation.trust_score < self.auto_junk_threshold {
+            return true;
+        }
+
+        false
+    }
+}
+
+/// A BNS record for address lookup.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BnsRecord {
     /// Human-readable handle (e.g., "revanth@bevel.com").

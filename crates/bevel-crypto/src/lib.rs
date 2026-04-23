@@ -133,6 +133,43 @@ impl BevelIdentity {
     pub fn identity_key(&self) -> Option<&StaticSecret> {
         self.identity_key.as_ref()
     }
+
+    /// Splits the 32-byte entropy into Shamir shards.
+    /// threshold: minimum number of shards required to recover the identity.
+    /// total: total number of shards to generate.
+    pub fn split_identity(&self, threshold: u8, total: u8) -> Result<Vec<Vec<u8>>, Box<dyn std::error::Error>> {
+        use shamirsecretsharing::{ create_shares, DATA_SIZE };
+        
+        let mnemonic = <Mnemonic as std::str::FromStr>::from_str(&self.seed_phrase)?;
+        let entropy = mnemonic.to_entropy();
+        
+        // shamirsecretsharing 0.1 expects exactly 64 bytes (DATA_SIZE)
+        let mut padded_entropy = vec![0u8; DATA_SIZE];
+        padded_entropy[..entropy.len()].copy_from_slice(&entropy);
+        
+        let shares = create_shares(&padded_entropy, total, threshold)
+            .map_err(|e| format!("Failed to create shares: {:?}", e))?;
+            
+        Ok(shares)
+    }
+
+    /// Recovers an identity from a set of Shamir shards.
+    pub fn recover_identity(shares: Vec<Vec<u8>>) -> Result<Self, Box<dyn std::error::Error>> {
+        use shamirsecretsharing::{ combine_shares };
+        
+        if shares.is_empty() {
+            return Err("No shares provided".into());
+        }
+
+        let padded_entropy = combine_shares(&shares)
+            .map_err(|e| format!("Recovery failed: {:?}", e))?
+            .ok_or("Not enough shares to recover secret")?;
+            
+        // The original entropy was 32 bytes
+        let entropy = &padded_entropy[..32];
+        let mnemonic = Mnemonic::from_entropy(entropy)?;
+        Self::from_seed_phrase(&mnemonic.to_string())
+    }
 }
 
 /// Derives a canonical DMP address from a public key.
@@ -415,5 +452,25 @@ mod tests {
         // we test the fundamental step that Bob can ratchet his send chain.
         let _mk_b2 = bob_ratchet.ratchet_send();
         assert_eq!(bob_ratchet.send_count, 2);
+    }
+
+    #[test]
+    fn test_shamir_social_recovery() {
+        let id = BevelIdentity::generate().unwrap();
+        let phrase = id.seed_phrase().to_string();
+        
+        // Split into 5 shards, 3 required to recover
+        let shards = id.split_identity(3, 5).unwrap();
+        assert_eq!(shards.len(), 5);
+        
+        // Recover with 3 shards
+        let subset = vec![shards[0].clone(), shards[2].clone(), shards[4].clone()];
+        let recovered_id = BevelIdentity::recover_identity(subset).unwrap();
+        assert_eq!(phrase, recovered_id.seed_phrase());
+        
+        // Recovery fails with only 2 shards
+        let subset_too_small = vec![shards[1].clone(), shards[3].clone()];
+        let res = BevelIdentity::recover_identity(subset_too_small);
+        assert!(res.is_err() || res.unwrap().seed_phrase() != phrase);
     }
 }

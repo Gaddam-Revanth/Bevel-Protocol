@@ -305,12 +305,71 @@ impl BevelNode {
     }
 
     /// Queries the DHT to resolve a handle to a Bevel address.
-    pub fn resolve_handle(&mut self, handle: &str) {
+    pub fn get_bns_record(&mut self, handle: &str) {
         let key = Self::derive_bns_dht_key(handle);
         let kad_key = libp2p::kad::RecordKey::new(&key);
         self.swarm.behaviour_mut().kademlia.get_record(kad_key);
     }
 
+    // ── Device Synchronization (Multi-Device Gossip) ───────────────────────
+
+    /// Derives a DHT key for discovering other devices sharing the same identity.
+    /// HMAC(shared_address, "device-sync-discovery")
+    pub fn derive_device_sync_key(address: &str) -> Vec<u8> {
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(address.as_bytes()).expect("HMAC accepts any key size");
+        mac.update(b"device-sync-discovery");
+        mac.finalize().into_bytes().to_vec()
+    }
+
+    /// Registers this device's presence in the DHT for synchronization.
+    pub fn register_device_sync(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let key = Self::derive_device_sync_key(&self.identity.address);
+        let kad_key = libp2p::kad::RecordKey::new(&key);
+        
+        // We use a mutable record so multiple devices can register under the same key
+        let record = libp2p::kad::Record {
+            key: kad_key,
+            value: self.peer_id.to_bytes(),
+            publisher: Some(self.peer_id),
+            expires: None,
+        };
+        self.swarm.behaviour_mut().kademlia.put_record(record, libp2p::kad::Quorum::One)?;
+        Ok(())
+    }
+
+    /// Looks up other devices sharing the same identity for synchronization.
+    pub fn lookup_sync_devices(&mut self) {
+        let key = Self::derive_device_sync_key(&self.identity.address);
+        let kad_key = libp2p::kad::RecordKey::new(&key);
+        self.swarm.behaviour_mut().kademlia.get_record(kad_key);
+    }
+
+    /// Creates a signed sync packet to broadcast to other devices.
+    pub fn create_sync_packet(
+        &self,
+        device_id: String,
+        payload: bevel_protocol::DeviceSyncPayload,
+    ) -> Result<bevel_protocol::DeviceSyncPacket, Box<dyn std::error::Error>> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mut packet = bevel_protocol::DeviceSyncPacket {
+            device_id,
+            timestamp: now,
+            payload,
+            signature: [0u8; 64],
+        };
+
+        // Sign the packet with the shared identity key
+        let signing_data = bincode::serialize(&packet)?;
+        packet.signature = self.identity.sign(&signing_data)?;
+
+        Ok(packet)
+    }
+}
     /// Triggers the Kademlia bootstrap process.
     pub fn bootstrap(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.swarm.behaviour_mut().kademlia.bootstrap()
