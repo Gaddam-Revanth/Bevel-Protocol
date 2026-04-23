@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
 use bevel_crypto::RatchetState;
-use x25519_dalek::{StaticSecret, PublicKey};
+use serde::{Deserialize, Serialize};
+use x25519_dalek::{PublicKey, StaticSecret};
 
 #[derive(Serialize, Deserialize)]
 pub struct SerRatchetState {

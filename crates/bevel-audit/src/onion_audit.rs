@@ -1,17 +1,23 @@
 //! Onion routing security audit: anonymity, integrity, and protocol properties.
 
-use bevel_onion::{OnionRouter, OnionHopSpec, OnionCell, ONION_CELL_SIZE, ReplayCache};
-use x25519_dalek::{StaticSecret, PublicKey};
-use rand::RngCore;
 use crate::{Finding, Severity, Status};
+use bevel_onion::{OnionCell, OnionHopSpec, OnionRouter, ReplayCache, ONION_CELL_SIZE};
+use rand::RngCore;
+use x25519_dalek::{PublicKey, StaticSecret};
 
 /// Helper: generate a random relay spec + its secret.
 fn random_relay(rng: &mut impl RngCore, id: &str) -> (OnionHopSpec, StaticSecret) {
     let mut bytes = [0u8; 32];
     rng.fill_bytes(&mut bytes);
-    let secret  = StaticSecret::from(bytes);
+    let secret = StaticSecret::from(bytes);
     let pub_key = PublicKey::from(&secret);
-    (OnionHopSpec { relay_pub_key: pub_key.to_bytes(), peer_id: id.into() }, secret)
+    (
+        OnionHopSpec {
+            relay_pub_key: pub_key.to_bytes(),
+            peer_id: id.into(),
+        },
+        secret,
+    )
 }
 
 pub fn run() -> Vec<Finding> {
@@ -60,11 +66,16 @@ fn test_layer_isolation() -> Finding {
         title: "Onion Layer Isolation (Relay Cannot Peek Forward)",
         severity: Severity::Critical,
         description: if isolated {
-            "Each relay can only decrypt its own layer. Relay N cannot peel relay N+1's layer.".into()
+            "Each relay can only decrypt its own layer. Relay N cannot peel relay N+1's layer."
+                .into()
         } else {
             "ISOLATION FAILURE: Relay 0's key successfully decrypted Relay 1's layer!".into()
         },
-        status: if isolated { Status::Passed } else { Status::Confirmed },
+        status: if isolated {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "Verify independent ephemeral X25519 key pairs are generated per hop.",
     }
 }
@@ -73,7 +84,7 @@ fn test_layer_isolation() -> Finding {
 fn test_relay_cannot_read_exit_payload() -> Finding {
     let mut rng = rand::thread_rng();
     let (spec0, sec0) = random_relay(&mut rng, "entry");
-    let (spec1, _)    = random_relay(&mut rng, "exit");
+    let (spec1, _) = random_relay(&mut rng, "exit");
 
     let secret_payload = b"TOP SECRET \x2d entry relay must not see this";
     let cell = OnionRouter::build_circuit(&[spec0, spec1], secret_payload).unwrap();
@@ -84,7 +95,8 @@ fn test_relay_cannot_read_exit_payload() -> Finding {
     assert!(!entry_result.is_exit, "Entry should not be exit");
 
     // Check inner_data does NOT contain the plaintext payload.
-    let plaintext_visible = entry_result.inner_data
+    let plaintext_visible = entry_result
+        .inner_data
         .windows(secret_payload.len())
         .any(|w| w == secret_payload);
 
@@ -97,8 +109,13 @@ fn test_relay_cannot_read_exit_payload() -> Finding {
         } else {
             "EXPOSURE: Entry relay's peeled inner_data contains the plaintext exit payload!".into()
         },
-        status: if !plaintext_visible { Status::Passed } else { Status::Confirmed },
-        recommendation: "The exit layer must be independently encrypted under the exit relay's key.",
+        status: if !plaintext_visible {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
+        recommendation:
+            "The exit layer must be independently encrypted under the exit relay's key.",
     }
 }
 
@@ -136,7 +153,9 @@ fn test_tamper_detection_ciphertext() -> Finding {
     let payload = b"tamper detection ciphertext";
     let mut cell = OnionRouter::build_circuit(&[spec], payload).unwrap();
 
-    if let Some(b) = cell.ciphertext.first_mut() { *b ^= 0xFF; }
+    if let Some(b) = cell.ciphertext.first_mut() {
+        *b ^= 0xFF;
+    }
 
     let mut cache = ReplayCache::new();
     let rejected = OnionRouter::peel_layer(&cell, &secret, &mut cache).is_err();
@@ -174,8 +193,13 @@ fn test_tamper_detection_nonce() -> Finding {
         } else {
             "Nonce tampering accepted! GCM verification does not protect the nonce.".into()
         },
-        status: if rejected { Status::Passed } else { Status::Confirmed },
-        recommendation: "Use AEAD with the nonce bound to the AAD, or include the nonce in the HMAC.",
+        status: if rejected {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
+        recommendation:
+            "Use AEAD with the nonce bound to the AAD, or include the nonce in the HMAC.",
     }
 }
 
@@ -191,7 +215,10 @@ fn test_wire_padding_multiple_of_512() -> Finding {
         let cell = OnionRouter::build_circuit(&[spec], &payload).unwrap();
         let wire_len = cell.wire_size();
         if wire_len % ONION_CELL_SIZE != 0 {
-            violations.push(format!("payload {}B → wire {}B (not multiple of 512)", sz, wire_len));
+            violations.push(format!(
+                "payload {}B → wire {}B (not multiple of 512)",
+                sz, wire_len
+            ));
         }
     }
 
@@ -205,7 +232,11 @@ fn test_wire_padding_multiple_of_512() -> Finding {
         } else {
             format!("Padding violations: {}", violations.join("; "))
         },
-        status: if ok { Status::Passed } else { Status::Confirmed },
+        status: if ok {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "Enforce PKCS-style or fixed-cell padding before any network transmission.",
     }
 }
@@ -214,7 +245,7 @@ fn test_wire_padding_multiple_of_512() -> Finding {
 fn test_wrong_relay_key_rejected() -> Finding {
     let mut rng = rand::thread_rng();
     let (spec_a, _sec_a) = random_relay(&mut rng, "relay-a");
-    let (_spec_b, sec_b)  = random_relay(&mut rng, "relay-b");
+    let (_spec_b, sec_b) = random_relay(&mut rng, "relay-b");
 
     let payload = b"wrong key rejection";
     let cell = OnionRouter::build_circuit(&[spec_a], payload).unwrap();
@@ -226,11 +257,16 @@ fn test_wrong_relay_key_rejected() -> Finding {
         title: "Wrong Relay Key Rejected",
         severity: Severity::Critical,
         description: if rejected {
-            "A cell addressed to relay A cannot be decrypted by relay B — key isolation confirmed.".into()
+            "A cell addressed to relay A cannot be decrypted by relay B — key isolation confirmed."
+                .into()
         } else {
             "CRITICAL: Relay B successfully decrypted a cell addressed to relay A!".into()
         },
-        status: if rejected { Status::Passed } else { Status::Confirmed },
+        status: if rejected {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "ECDH shared secret must be unique per (sender_eph, relay_static) pair.",
     }
 }
@@ -239,8 +275,8 @@ fn test_wrong_relay_key_rejected() -> Finding {
 fn test_hop_count_metadata_leak() -> Finding {
     use bevel_protocol::{OnionCellHeader, DMP_LAYER_ONION};
     let _header = OnionCellHeader {
-        layer_id:   DMP_LAYER_ONION,
-        version:    0x01,
+        layer_id: DMP_LAYER_ONION,
+        version: 0x01,
         circuit_id: [0xABu8; 16],
     };
     // The hop_count field is gone, so it can't leak.
@@ -249,7 +285,8 @@ fn test_hop_count_metadata_leak() -> Finding {
         title: "OnionCellHeader Metadata Hardening",
         severity: Severity::Low,
         description: "The OnionCellHeader no longer contains the hop_count field. \
-                      Total circuit length is now opaque to observers and relays.".into(),
+                      Total circuit length is now opaque to observers and relays."
+            .into(),
         status: Status::Passed,
         recommendation: "Maintain opaque headers to prevent circuit de-anonymisation.",
     }

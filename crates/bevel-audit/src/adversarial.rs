@@ -1,17 +1,23 @@
 //! Adversarial / fuzzing audit: malformed inputs, boundary conditions, edge cases.
 
-use bevel_onion::{OnionRouter, OnionHopSpec, OnionCell, ReplayCache};
-use bevel_crypto::decrypt_payload;
-use x25519_dalek::{StaticSecret, PublicKey};
-use rand::RngCore;
 use crate::{Finding, Severity, Status};
+use bevel_crypto::decrypt_payload;
+use bevel_onion::{OnionCell, OnionHopSpec, OnionRouter, ReplayCache};
+use rand::RngCore;
+use x25519_dalek::{PublicKey, StaticSecret};
 
 fn random_relay(rng: &mut impl RngCore, id: &str) -> (OnionHopSpec, StaticSecret) {
     let mut bytes = [0u8; 32];
     rng.fill_bytes(&mut bytes);
-    let secret  = StaticSecret::from(bytes);
+    let secret = StaticSecret::from(bytes);
     let pub_key = PublicKey::from(&secret);
-    (OnionHopSpec { relay_pub_key: pub_key.to_bytes(), peer_id: id.into() }, secret)
+    (
+        OnionHopSpec {
+            relay_pub_key: pub_key.to_bytes(),
+            peer_id: id.into(),
+        },
+        secret,
+    )
 }
 
 pub fn run() -> Vec<Finding> {
@@ -34,7 +40,9 @@ fn test_empty_payload_circuit() -> Finding {
     let cell = OnionRouter::build_circuit(&[spec], b"").unwrap();
     let mut cache = ReplayCache::new();
     let result = OnionRouter::peel_layer(&cell, &secret, &mut cache);
-    let ok = result.map(|r| r.is_exit && r.inner_data.is_empty()).unwrap_or(false);
+    let ok = result
+        .map(|r| r.is_exit && r.inner_data.is_empty())
+        .unwrap_or(false);
     Finding {
         id: "BVL-A01",
         title: "Empty Payload Handled Gracefully",
@@ -44,7 +52,11 @@ fn test_empty_payload_circuit() -> Finding {
         } else {
             "CRASH or failure: empty payload caused an error or incorrect result in the onion circuit.".into()
         },
-        status: if ok { Status::Passed } else { Status::Confirmed },
+        status: if ok {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "Guard all slice operations against zero-length inputs.",
     }
 }
@@ -63,8 +75,13 @@ fn test_large_payload_circuit() -> Finding {
         } else {
             format!("Large payload failure: {:?}", trace.err())
         },
-        status: if ok { Status::Passed } else { Status::Confirmed },
-        recommendation: "Document maximum supported payload size and enforce it at the API boundary.",
+        status: if ok {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
+        recommendation:
+            "Document maximum supported payload size and enforce it at the API boundary.",
     }
 }
 
@@ -79,9 +96,14 @@ fn test_garbage_bytes_as_onion_cell() -> Finding {
 
     let mut nonce = [0u8; 12];
     rng.fill_bytes(&mut nonce);
-    let mut eph   = [0u8; 32]; rng.fill_bytes(&mut eph);
+    let mut eph = [0u8; 32];
+    rng.fill_bytes(&mut eph);
 
-    let garbage_cell = OnionCell { eph_pub_key: eph, nonce, ciphertext: garbage_ct };
+    let garbage_cell = OnionCell {
+        eph_pub_key: eph,
+        nonce,
+        ciphertext: garbage_ct,
+    };
     let mut cache = ReplayCache::new();
     let result = OnionRouter::peel_layer(&garbage_cell, &secret, &mut cache);
 
@@ -91,12 +113,18 @@ fn test_garbage_bytes_as_onion_cell() -> Finding {
         title: "Garbage Onion Cell Returns Error (No Panic)",
         severity: Severity::Medium,
         description: if handled {
-            "Random garbage ciphertext is gracefully rejected by GCM authentication — no panic.".into()
+            "Random garbage ciphertext is gracefully rejected by GCM authentication — no panic."
+                .into()
         } else {
             "Garbage input was accepted as valid — authentication is not working!".into()
         },
-        status: if handled { Status::Passed } else { Status::Confirmed },
-        recommendation: "All external deserialization paths must be wrapped in Result, never unwrap().",
+        status: if handled {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
+        recommendation:
+            "All external deserialization paths must be wrapped in Result, never unwrap().",
     }
 }
 
@@ -109,7 +137,9 @@ fn test_truncated_ciphertext() -> Finding {
 
     // Remove the last 16 bytes (the GCM auth tag).
     let len = cell.ciphertext.len();
-    if len > 16 { cell.ciphertext.truncate(len - 16); }
+    if len > 16 {
+        cell.ciphertext.truncate(len - 16);
+    }
 
     let mut cache = ReplayCache::new();
     let rejected = OnionRouter::peel_layer(&cell, &secret, &mut cache).is_err();
@@ -118,12 +148,18 @@ fn test_truncated_ciphertext() -> Finding {
         title: "Truncated Ciphertext (Missing GCM Tag) Rejected",
         severity: Severity::High,
         description: if rejected {
-            "Removing the 16-byte GCM authentication tag causes peel_layer to correctly fail.".into()
+            "Removing the 16-byte GCM authentication tag causes peel_layer to correctly fail."
+                .into()
         } else {
             "CRITICAL: Cell with truncated GCM tag was accepted — authentication bypassed!".into()
         },
-        status: if rejected { Status::Passed } else { Status::Confirmed },
-        recommendation: "Ensure the AEAD trait's decrypt() method is always used — never raw stream decryption.",
+        status: if rejected {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
+        recommendation:
+            "Ensure the AEAD trait's decrypt() method is always used — never raw stream decryption.",
     }
 }
 
@@ -140,17 +176,23 @@ fn test_zero_hops_rejected() -> Finding {
         } else {
             "build_circuit accepted an empty relay list — this could cause a panic on peel.".into()
         },
-        status: if rejected { Status::Passed } else { Status::Confirmed },
+        status: if rejected {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "Validate hops.len() >= 1 (and <= MAX_HOPS) at the start of build_circuit.",
     }
 }
 
 /// Building a circuit with > MAX_HOPS (8) relays must be rejected.
 fn test_over_max_hops_rejected() -> Finding {
-    let hops: Vec<OnionHopSpec> = (0..9).map(|i| OnionHopSpec {
-        relay_pub_key: [i as u8; 32],
-        peer_id: format!("r{}", i),
-    }).collect();
+    let hops: Vec<OnionHopSpec> = (0..9)
+        .map(|i| OnionHopSpec {
+            relay_pub_key: [i as u8; 32],
+            peer_id: format!("r{}", i),
+        })
+        .collect();
     let rejected = OnionRouter::build_circuit(&hops, b"overflow").is_err();
     Finding {
         id: "BVL-A06",
@@ -161,8 +203,13 @@ fn test_over_max_hops_rejected() -> Finding {
         } else {
             "9-hop circuit was accepted — no upper-bound enforcement on circuit length.".into()
         },
-        status: if rejected { Status::Passed } else { Status::Confirmed },
-        recommendation: "Consider making MAX_HOPS a runtime-configurable parameter with a hard ceiling.",
+        status: if rejected {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
+        recommendation:
+            "Consider making MAX_HOPS a runtime-configurable parameter with a hard ceiling.",
     }
 }
 
@@ -175,17 +222,22 @@ fn test_invalid_utf8_peer_id_in_peel() -> Finding {
     let mut garbage_ct = vec![0xFFu8; 80]; // all-0xFF — invalid UTF-8 if interpreted as peer_id
     rng.fill_bytes(&mut garbage_ct);
 
-    let mut nonce = [0u8; 12]; rng.fill_bytes(&mut nonce);
-    let mut eph   = [0u8; 32]; rng.fill_bytes(&mut eph);
-    let bad_cell  = OnionCell { eph_pub_key: eph, nonce, ciphertext: garbage_ct };
+    let mut nonce = [0u8; 12];
+    rng.fill_bytes(&mut nonce);
+    let mut eph = [0u8; 32];
+    rng.fill_bytes(&mut eph);
+    let bad_cell = OnionCell {
+        eph_pub_key: eph,
+        nonce,
+        ciphertext: garbage_ct,
+    };
 
     // Should return Err (GCM rejection), never panic.
-    let no_panic = std::panic::catch_unwind(
-        std::panic::AssertUnwindSafe(|| {
-            let mut cache = ReplayCache::new();
-            let _ = OnionRouter::peel_layer(&bad_cell, &secret, &mut cache);
-        })
-    ).is_ok();
+    let no_panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut cache = ReplayCache::new();
+        let _ = OnionRouter::peel_layer(&bad_cell, &secret, &mut cache);
+    }))
+    .is_ok();
 
     Finding {
         id: "BVL-A07",
@@ -194,16 +246,22 @@ fn test_invalid_utf8_peer_id_in_peel() -> Finding {
         description: if no_panic {
             "Adversarial input with invalid UTF-8 in the peer ID position is handled without panicking.".into()
         } else {
-            "PANIC: Invalid UTF-8 peer ID caused a hard crash — unwrap() on from_utf8() detected!".into()
+            "PANIC: Invalid UTF-8 peer ID caused a hard crash — unwrap() on from_utf8() detected!"
+                .into()
         },
-        status: if no_panic { Status::Passed } else { Status::Confirmed },
-        recommendation: "Use String::from_utf8(...).map_err(...)? instead of .unwrap() in peel_layer.",
+        status: if no_panic {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
+        recommendation:
+            "Use String::from_utf8(...).map_err(...)? instead of .unwrap() in peel_layer.",
     }
 }
 
 /// AES-GCM decryption of an empty ciphertext (0 bytes) must return an error — not panic.
 fn test_aes_gcm_empty_ciphertext() -> Finding {
-    let key   = [0xCCu8; 32];
+    let key = [0xCCu8; 32];
     let nonce = [0x00u8; 12];
     let result = decrypt_payload(&key, &nonce, &[], b"");
     let handled = result.is_err();
@@ -216,7 +274,12 @@ fn test_aes_gcm_empty_ciphertext() -> Finding {
         } else {
             "Empty ciphertext was accepted — GCM minimum-length check is missing!".into()
         },
-        status: if handled { Status::Passed } else { Status::Confirmed },
-        recommendation: "Add an explicit length check: ciphertext.len() >= 16 before calling decrypt.",
+        status: if handled {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
+        recommendation:
+            "Add an explicit length check: ciphertext.len() >= 16 before calling decrypt.",
     }
 }

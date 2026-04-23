@@ -1,13 +1,12 @@
 //! Cryptographic primitive audit: correctness + vulnerability tests.
 
-use bevel_crypto::{
-    BevelIdentity, RatchetState,
-    compute_x3dh_master_secret, encrypt_payload,
-    generate_receipt, verify_receipt,
-};
-use x25519_dalek::{StaticSecret, PublicKey};
-use rand::RngCore;
 use crate::{Finding, Severity, Status};
+use bevel_crypto::{
+    compute_x3dh_master_secret, encrypt_payload, generate_receipt, verify_receipt, BevelIdentity,
+    RatchetState,
+};
+use rand::RngCore;
+use x25519_dalek::{PublicKey, StaticSecret};
 
 pub fn run() -> Vec<Finding> {
     vec![
@@ -26,8 +25,8 @@ pub fn run() -> Vec<Finding> {
 fn test_identity_determinism() -> Finding {
     let id1 = BevelIdentity::generate().unwrap();
     let id2 = BevelIdentity::from_seed_phrase(id1.seed_phrase()).unwrap();
-    let deterministic = id1.address == id2.address
-        && id1.public_identity_key == id2.public_identity_key;
+    let deterministic =
+        id1.address == id2.address && id1.public_identity_key == id2.public_identity_key;
 
     Finding {
         id: "BVL-C01",
@@ -38,7 +37,11 @@ fn test_identity_determinism() -> Finding {
         } else {
             "BROKEN: seed phrase recovery produced different keys — determinism violated!".into()
         },
-        status: if deterministic { Status::Passed } else { Status::Confirmed },
+        status: if deterministic {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "Ensure BIP-39 / HKDF derivation path is fixed and version-pinned.",
     }
 }
@@ -63,7 +66,11 @@ fn test_address_uniqueness() -> Finding {
         } else {
             "COLLISION DETECTED: two different seeds produced the same DMP address!".into()
         },
-        status: if !collision { Status::Passed } else { Status::Confirmed },
+        status: if !collision {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "DMP address derivation must be collision-resistant (SHA-256 based).",
     }
 }
@@ -71,10 +78,10 @@ fn test_address_uniqueness() -> Finding {
 /// X3DH: Alice's master secret must equal Bob's computed master secret.
 fn test_x3dh_master_secret_symmetry() -> Finding {
     let alice = BevelIdentity::generate().unwrap();
-    let bob   = BevelIdentity::generate().unwrap();
+    let bob = BevelIdentity::generate().unwrap();
 
     let alice_ik = alice.identity_key().unwrap();
-    let bob_ik   = bob.identity_key().unwrap();
+    let bob_ik = bob.identity_key().unwrap();
 
     let mut rng = rand::thread_rng();
     let mut eph_bytes = [0u8; 32];
@@ -85,18 +92,19 @@ fn test_x3dh_master_secret_symmetry() -> Finding {
     rng.fill_bytes(&mut spk_bytes);
     let bob_spk = StaticSecret::from(spk_bytes);
     let bob_spk_pub = PublicKey::from(&bob_spk);
-    let bob_ik_pub  = PublicKey::from(bob_ik);
+    let bob_ik_pub = PublicKey::from(bob_ik);
 
-    let ms_alice = compute_x3dh_master_secret(alice_ik, &alice_eph, &bob_ik_pub, &bob_spk_pub, None);
+    let ms_alice =
+        compute_x3dh_master_secret(alice_ik, &alice_eph, &bob_ik_pub, &bob_spk_pub, None);
 
     // Bob's side: DH(bob_spk, alice_ik_pub) ‖ DH(bob_ik, alice_eph_pub) ‖ DH(bob_spk, alice_eph_pub)
-    let alice_ik_pub  = PublicKey::from(alice_ik);
+    let alice_ik_pub = PublicKey::from(alice_ik);
     let alice_eph_pub = PublicKey::from(&alice_eph);
 
     let dh1 = bob_spk.diffie_hellman(&alice_ik_pub);
     let dh2 = bob_ik.diffie_hellman(&alice_eph_pub);
     let dh3 = bob_spk.diffie_hellman(&alice_eph_pub);
-    
+
     let mut ikm = Vec::new();
     ikm.extend_from_slice(dh1.as_bytes());
     ikm.extend_from_slice(dh2.as_bytes());
@@ -107,7 +115,7 @@ fn test_x3dh_master_secret_symmetry() -> Finding {
     let mut mac = <HkdfExtract as Mac>::new_from_slice(&[0u8; 32]).unwrap();
     <HkdfExtract as Mac>::update(&mut mac, &ikm);
     let prk = mac.finalize().into_bytes();
-    
+
     let mut expand_mac = <HkdfExtract as Mac>::new_from_slice(&prk).unwrap();
     <HkdfExtract as Mac>::update(&mut expand_mac, b"bevel-x3dh-v1");
     <HkdfExtract as Mac>::update(&mut expand_mac, &[0x01]);
@@ -121,9 +129,14 @@ fn test_x3dh_master_secret_symmetry() -> Finding {
         description: if symmetric {
             "Alice and Bob independently compute the same X3DH master secret.".into()
         } else {
-            "X3DH asymmetry: Alice and Bob derive DIFFERENT secrets — session encryption broken!".into()
+            "X3DH asymmetry: Alice and Bob derive DIFFERENT secrets — session encryption broken!"
+                .into()
         },
-        status: if symmetric { Status::Passed } else { Status::Confirmed },
+        status: if symmetric {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "Fix X3DH DH term ordering to match Signal specification exactly.",
     }
 }
@@ -157,13 +170,13 @@ fn test_nonce_uniqueness() -> Finding {
 
 /// An HMAC receipt generated with key A must NOT verify with key B.
 fn test_receipt_forgery_rejected() -> Finding {
-    let real_key  = [0x11u8; 32];
+    let real_key = [0x11u8; 32];
     let forge_key = [0x22u8; 32];
-    let msg_id    = [0x33u8; 32];
+    let msg_id = [0x33u8; 32];
     let ts = 1_700_000_000u64;
 
-    let receipt  = generate_receipt(&real_key, &msg_id, ts);
-    let forgery  = verify_receipt(&forge_key, &msg_id, ts, &receipt);
+    let receipt = generate_receipt(&real_key, &msg_id, ts);
+    let forgery = verify_receipt(&forge_key, &msg_id, ts, &receipt);
 
     Finding {
         id: "BVL-C05",
@@ -174,7 +187,11 @@ fn test_receipt_forgery_rejected() -> Finding {
         } else {
             "FORGERY: A receipt signed with key A verifies under key B — HMAC broken!".into()
         },
-        status: if !forgery { Status::Passed } else { Status::Confirmed },
+        status: if !forgery {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "Verify HMAC implementation uses constant-time comparison.",
     }
 }
@@ -200,7 +217,11 @@ fn test_ratchet_forward_secrecy() -> Finding {
         } else {
             "RATCHET BROKEN: consecutive ratchet steps returned the same message key!".into()
         },
-        status: if unique { Status::Passed } else { Status::Confirmed },
+        status: if unique {
+            Status::Passed
+        } else {
+            Status::Confirmed
+        },
         recommendation: "Ensure kdf_ck applies the correct KDF on the chain key each step.",
     }
 }
@@ -215,12 +236,18 @@ fn test_seed_phrase_in_plaintext_memory() -> Finding {
         severity: Severity::Low,
         description: if has_phrase {
             "BevelIdentity.seed_phrase is wrapped in Zeroizing<String>. \
-             Memory is cleared when the identity object is dropped.".into()
+             Memory is cleared when the identity object is dropped."
+                .into()
         } else {
             "Seed phrase field is empty — not stored in memory.".into()
         },
-        status: if has_phrase { Status::Passed } else { Status::KnownLimitation },
-        recommendation: "Ensure sensitive objects are dropped as soon as they are no longer needed.",
+        status: if has_phrase {
+            Status::Passed
+        } else {
+            Status::KnownLimitation
+        },
+        recommendation:
+            "Ensure sensitive objects are dropped as soon as they are no longer needed.",
     }
 }
 
@@ -233,7 +260,8 @@ fn test_ed25519_signing_key_exposed() -> Finding {
         title: "Ed25519 SigningKey Private Isolation",
         severity: Severity::Low,
         description: "BevelIdentity.signing_key is a private field. \
-                      Access is restricted to internal signing methods.".into(),
+                      Access is restricted to internal signing methods."
+            .into(),
         status: Status::Passed,
         recommendation: "Continue using private fields for all sensitive cryptographic material.",
     }

@@ -2,13 +2,13 @@
 //!
 //! Handles chunking, encryption, and manifest generation for large binary blobs.
 
-use std::path::{Path};
-use std::fs;
-use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce, aead::Aead};
+use aes_gcm::{aead::Aead, Aes256Gcm, Key, KeyInit, Nonce};
+use bevel_p2p::SfpEngine;
+use bevel_protocol::{BlobFolderEntry, BlobFolderManifest, DmpAttachmentRef};
 use rand::RngCore;
-use sha2::{Sha256, Digest};
-use bevel_protocol::{DmpAttachmentRef, BlobFolderManifest, BlobFolderEntry};
-use bevel_p2p::{SfpEngine};
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::Path;
 use walkdir::WalkDir;
 
 pub struct BlobEngine;
@@ -25,8 +25,14 @@ impl BlobEngine {
         path: &Path,
         recipient_addr: &str,
     ) -> Result<BlobResult, Box<dyn std::error::Error>> {
-        let file_name = path.file_name().ok_or("Invalid filename")?.to_string_lossy().to_string();
-        let mime_type = mime_guess::from_path(path).first_or_octet_stream().to_string();
+        let file_name = path
+            .file_name()
+            .ok_or("Invalid filename")?
+            .to_string_lossy()
+            .to_string();
+        let mime_type = mime_guess::from_path(path)
+            .first_or_octet_stream()
+            .to_string();
         let raw_data = fs::read(path)?;
         let size = raw_data.len() as u64;
 
@@ -34,7 +40,7 @@ impl BlobEngine {
         let mut key_bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut key_bytes);
         let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
-        
+
         // Generate nonce
         let mut nonce_bytes = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
@@ -42,7 +48,8 @@ impl BlobEngine {
 
         // Encrypt the entire file
         let cipher = Aes256Gcm::new(key);
-        let ciphertext = cipher.encrypt(nonce, raw_data.as_ref())
+        let ciphertext = cipher
+            .encrypt(nonce, raw_data.as_ref())
             .map_err(|_| "Encryption failed")?;
 
         // Prepend nonce to ciphertext for easier retrieval
@@ -57,7 +64,7 @@ impl BlobEngine {
         // Chunk it using SFP
         let mut msg_id = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut msg_id);
-        
+
         // SFP doesn't need recipient address for chunking itself, but for key derivation
         let (_, chunks) = SfpEngine::chunk_message(
             recipient_addr,
@@ -88,40 +95,49 @@ impl BlobEngine {
         path: &Path,
         recipient_addr: &str,
     ) -> Result<BlobResult, Box<dyn std::error::Error>> {
-        let folder_name = path.file_name().ok_or("Invalid folder name")?.to_string_lossy().to_string();
+        let folder_name = path
+            .file_name()
+            .ok_or("Invalid folder name")?
+            .to_string_lossy()
+            .to_string();
         let mut entries = Vec::new();
         let mut all_chunks = Vec::new();
-        
+
         // Use a shared key for the folder manifest itself
         let mut folder_key_bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut folder_key_bytes);
 
         for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
             if entry.file_type().is_file() {
-                let rel_path = entry.path().strip_prefix(path)?.to_string_lossy().to_string();
+                let rel_path = entry
+                    .path()
+                    .strip_prefix(path)?
+                    .to_string_lossy()
+                    .to_string();
                 let res = Self::process_file(entry.path(), recipient_addr)?;
-                
+
                 entries.push(BlobFolderEntry {
                     relative_path: rel_path,
                     content_hash: res.attachment_ref.content_hash,
                     size: res.attachment_ref.size,
                 });
-                
+
                 all_chunks.extend(res.chunks);
             }
         }
 
         let manifest = BlobFolderManifest { entries };
         let manifest_bytes = serde_json::to_vec(&manifest)?;
-        
+
         // Encrypt the manifest itself
         let mut nonce_bytes = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let key = Key::<Aes256Gcm>::from_slice(&folder_key_bytes);
         let cipher = Aes256Gcm::new(key);
-        let encrypted_manifest = cipher.encrypt(Nonce::from_slice(&nonce_bytes), manifest_bytes.as_ref())
+        let encrypted_manifest = cipher
+            .encrypt(Nonce::from_slice(&nonce_bytes), manifest_bytes.as_ref())
             .map_err(|_| "Manifest encryption failed")?;
-        
+
         let mut manifest_payload = nonce_bytes.to_vec();
         manifest_payload.extend_from_slice(&encrypted_manifest);
 
@@ -132,13 +148,9 @@ impl BlobEngine {
         // Chunk the manifest itself
         let mut msg_id = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut msg_id);
-        let (_, manifest_chunks) = SfpEngine::chunk_message(
-            recipient_addr,
-            msg_id,
-            &manifest_payload,
-            [0u8; 32],
-        );
-        
+        let (_, manifest_chunks) =
+            SfpEngine::chunk_message(recipient_addr, msg_id, &manifest_payload, [0u8; 32]);
+
         all_chunks.extend(manifest_chunks);
 
         let attachment_ref = DmpAttachmentRef {
@@ -173,7 +185,7 @@ mod tests {
         file.write_all(content).unwrap();
 
         let res = BlobEngine::process_file(&file_path, "recipient").unwrap();
-        
+
         assert_eq!(res.attachment_ref.file_name, "test.txt");
         assert_eq!(res.attachment_ref.size, content.len() as u64);
         assert!(!res.chunks.is_empty());
@@ -184,15 +196,15 @@ mod tests {
         let dir = tempdir().unwrap();
         let folder_path = dir.path().join("my_folder");
         fs::create_dir(&folder_path).unwrap();
-        
+
         let file1_path = folder_path.join("file1.txt");
         fs::write(&file1_path, b"File 1 content").unwrap();
-        
+
         let file2_path = folder_path.join("file2.txt");
         fs::write(&file2_path, b"File 2 content").unwrap();
 
         let res = BlobEngine::process_folder(&folder_path, "recipient").unwrap();
-        
+
         assert_eq!(res.attachment_ref.file_name, "my_folder");
         assert!(res.attachment_ref.is_folder);
         assert_eq!(res.manifest.unwrap().entries.len(), 2);

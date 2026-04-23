@@ -1,21 +1,19 @@
-use libp2p::{
-    identity,
-    kad::{self, store::MemoryStore, Config as KadConfig},
-    identify,
-    swarm::{NetworkBehaviour, Swarm},
-    PeerId, Multiaddr,
-    SwarmBuilder,
-};
 use bevel_crypto::BevelIdentity;
-use bevel_onion::{OnionRouter, OnionHopSpec, OnionCell, PeelResult, ReplayCache};
-use x25519_dalek::StaticSecret;
-use std::time::Duration;
+use bevel_onion::{OnionCell, OnionHopSpec, OnionRouter, PeelResult, ReplayCache};
 use futures::StreamExt;
 use hmac::{Hmac, Mac};
+use libp2p::{
+    identify, identity,
+    kad::{self, store::MemoryStore, Config as KadConfig},
+    swarm::{NetworkBehaviour, Swarm},
+    Multiaddr, PeerId, SwarmBuilder,
+};
 use sha2::Sha256;
+use std::time::Duration;
+use x25519_dalek::StaticSecret;
 
 mod sfp;
-pub use sfp::{SfpEngine, derive_manifest_dht_key, derive_chunk_dht_key};
+pub use sfp::{derive_chunk_dht_key, derive_manifest_dht_key, SfpEngine};
 
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "BevelBehaviourEvent")]
@@ -55,11 +53,12 @@ impl BevelNode {
             .with_behaviour(|key| {
                 let kad_config = KadConfig::default();
                 let store = MemoryStore::new(key.public().to_peer_id());
-                let kademlia = kad::Behaviour::with_config(key.public().to_peer_id(), store, kad_config);
-                
+                let kademlia =
+                    kad::Behaviour::with_config(key.public().to_peer_id(), store, kad_config);
+
                 let identify_config = identify::Config::new("bevel/1.0.0".into(), key.public());
                 let identify = identify::Behaviour::new(identify_config);
-                
+
                 BevelBehaviour { kademlia, identify }
             })?
             .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
@@ -68,11 +67,20 @@ impl BevelNode {
         let db = bevel_storage::BevelDb::new(db_path)?;
         let replay_cache = ReplayCache::new();
 
-        let mut node = Self { peer_id, swarm, db, replay_cache, identity: node_identity };
+        let mut node = Self {
+            peer_id,
+            swarm,
+            db,
+            replay_cache,
+            identity: node_identity,
+        };
 
         // Add bootstrap nodes to the routing table
         for (peer, addr) in bootstraps {
-            node.swarm.behaviour_mut().kademlia.add_address(peer, addr.clone());
+            node.swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(peer, addr.clone());
         }
 
         Ok(node)
@@ -90,7 +98,8 @@ impl BevelNode {
 
     pub fn derive_pdp_key(dmp_address: &str) -> Vec<u8> {
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(dmp_address.as_bytes()).expect("HMAC accepts any key size");
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(dmp_address.as_bytes())
+            .expect("HMAC accepts any key size");
         mac.update(b"dmp-peer-discovery");
         mac.finalize().into_bytes().to_vec()
     }
@@ -104,7 +113,10 @@ impl BevelNode {
             publisher: Some(self.peer_id),
             expires: None,
         };
-        self.swarm.behaviour_mut().kademlia.put_record(record, libp2p::kad::Quorum::One)?;
+        self.swarm
+            .behaviour_mut()
+            .kademlia
+            .put_record(record, libp2p::kad::Quorum::One)?;
         Ok(())
     }
 
@@ -121,11 +133,13 @@ impl BevelNode {
         ciphertext: &[u8],
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Blinded sender identifier: HMAC(message_id, "sender-blinding")
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&message_id).expect("HMAC accepts any key size");
+        let mut mac =
+            <Hmac<Sha256> as Mac>::new_from_slice(&message_id).expect("HMAC accepts any key size");
         mac.update(b"sender-blinding");
         let sender_masked: [u8; 32] = mac.finalize().into_bytes().into();
 
-        let (mut manifest, chunks) = SfpEngine::chunk_message(recipient_address, message_id, ciphertext, sender_masked);
+        let (mut manifest, chunks) =
+            SfpEngine::chunk_message(recipient_address, message_id, ciphertext, sender_masked);
         manifest.sender_pub_key = self.identity.verifying_key_bytes();
 
         // Sign the manifest so recipients can verify authenticity
@@ -157,7 +171,10 @@ impl BevelNode {
                 publisher: Some(self.peer_id),
                 expires: None,
             };
-            self.swarm.behaviour_mut().kademlia.put_record(record, libp2p::kad::Quorum::One)?;
+            self.swarm
+                .behaviour_mut()
+                .kademlia
+                .put_record(record, libp2p::kad::Quorum::One)?;
         }
 
         // Put the manifest in the DHT (using daily epoch)
@@ -175,7 +192,10 @@ impl BevelNode {
             publisher: Some(self.peer_id),
             expires: None,
         };
-        self.swarm.behaviour_mut().kademlia.put_record(record, libp2p::kad::Quorum::One)?;
+        self.swarm
+            .behaviour_mut()
+            .kademlia
+            .put_record(record, libp2p::kad::Quorum::One)?;
 
         Ok(())
     }
@@ -198,7 +218,12 @@ impl BevelNode {
     }
 
     /// Stores a list of pre-processed media chunks into the DHT.
-    pub fn store_media_chunks(&mut self, chunks: Vec<bevel_protocol::DmpChunk>, recipient_address: &str, message_id: [u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn store_media_chunks(
+        &mut self,
+        chunks: Vec<bevel_protocol::DmpChunk>,
+        recipient_address: &str,
+        message_id: [u8; 32],
+    ) -> Result<(), Box<dyn std::error::Error>> {
         for chunk in chunks {
             let chunk_key = derive_chunk_dht_key(recipient_address, &message_id, chunk.chunk_index);
             let kad_key = libp2p::kad::RecordKey::new(&chunk_key);
@@ -209,7 +234,10 @@ impl BevelNode {
                 publisher: Some(self.peer_id),
                 expires: None,
             };
-            self.swarm.behaviour_mut().kademlia.put_record(record, libp2p::kad::Quorum::One)?;
+            self.swarm
+                .behaviour_mut()
+                .kademlia
+                .put_record(record, libp2p::kad::Quorum::One)?;
         }
         Ok(())
     }
@@ -317,7 +345,8 @@ impl BevelNode {
     /// HMAC(shared_address, "device-sync-discovery")
     pub fn derive_device_sync_key(address: &str) -> Vec<u8> {
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(address.as_bytes()).expect("HMAC accepts any key size");
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(address.as_bytes())
+            .expect("HMAC accepts any key size");
         mac.update(b"device-sync-discovery");
         mac.finalize().into_bytes().to_vec()
     }
@@ -326,7 +355,7 @@ impl BevelNode {
     pub fn register_device_sync(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let key = Self::derive_device_sync_key(&self.identity.address);
         let kad_key = libp2p::kad::RecordKey::new(&key);
-        
+
         // We use a mutable record so multiple devices can register under the same key
         let record = libp2p::kad::Record {
             key: kad_key,
@@ -334,7 +363,10 @@ impl BevelNode {
             publisher: Some(self.peer_id),
             expires: None,
         };
-        self.swarm.behaviour_mut().kademlia.put_record(record, libp2p::kad::Quorum::One)?;
+        self.swarm
+            .behaviour_mut()
+            .kademlia
+            .put_record(record, libp2p::kad::Quorum::One)?;
         Ok(())
     }
 
@@ -372,7 +404,10 @@ impl BevelNode {
 
     /// Triggers the Kademlia bootstrap process.
     pub fn bootstrap(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.swarm.behaviour_mut().kademlia.bootstrap()
+        self.swarm
+            .behaviour_mut()
+            .kademlia
+            .bootstrap()
             .map(|_| ())
             .map_err(|e| format!("Kademlia bootstrap failed: {:?}", e).into())
     }
@@ -384,7 +419,9 @@ impl BevelNode {
         }
 
         let mut cover_traffic_interval = tokio::time::interval(Duration::from_secs(45));
-        let mut delayed_onion_cells: futures::stream::FuturesUnordered<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>> = futures::stream::FuturesUnordered::new();
+        let mut delayed_onion_cells: futures::stream::FuturesUnordered<
+            std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>,
+        > = futures::stream::FuturesUnordered::new();
 
         loop {
             tokio::select! {
@@ -449,7 +486,7 @@ impl BevelNode {
                                                         data.extend_from_slice(&manifest.sender_pub_key);
                                                         data
                                                     };
-                                                    
+
                                                     if !bevel_crypto::BevelIdentity::verify_signature(&manifest.sender_pub_key, &manifest_signing_data, &manifest.signature) {
                                                         tracing::warn!("SFP manifest failed signature validation, dropping.");
                                                     } else {
@@ -534,18 +571,27 @@ mod tests {
         let id = BevelIdentity::generate().unwrap();
         let bootstrap_peer = PeerId::random();
         let bootstrap_addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001".parse().unwrap();
-        
+
         let bootstraps = vec![(bootstrap_peer, bootstrap_addr)];
         let temp_dir = std::env::temp_dir().join("bevel_test_bootstrap");
         let _ = std::fs::remove_dir_all(&temp_dir);
-        
-        let node = BevelNode::new(&id, temp_dir.to_str().unwrap(), &bootstraps).await.unwrap();
-        
-        assert_eq!(node.peer_id, PeerId::from_public_key(&identity::Keypair::ed25519_from_bytes(id.verifying_key_bytes()).unwrap().public()));
-        
+
+        let node = BevelNode::new(&id, temp_dir.to_str().unwrap(), &bootstraps)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            node.peer_id,
+            PeerId::from_public_key(
+                &identity::Keypair::ed25519_from_bytes(id.verifying_key_bytes())
+                    .unwrap()
+                    .public()
+            )
+        );
+
         // Verify the identity is stored
         assert_eq!(node.identity().address, id.address);
-        
+
         // Clean up
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -555,18 +601,24 @@ mod tests {
         let id = BevelIdentity::generate().unwrap();
         let temp_dir = std::env::temp_dir().join("bevel_test_sfp_sign");
         let _ = std::fs::remove_dir_all(&temp_dir);
-        
-        let mut node = BevelNode::new(&id, temp_dir.to_str().unwrap(), &[]).await.unwrap();
-        
+
+        let mut node = BevelNode::new(&id, temp_dir.to_str().unwrap(), &[])
+            .await
+            .unwrap();
+
         // Verify that store_offline_message produces a signed manifest
         let recipient = "dmp1testrecipient";
         let message_id = [0x42u8; 32];
         let ciphertext = b"test ciphertext for signing verification";
-        
+
         // This should succeed without errors (the manifest will be signed)
         let result = node.store_offline_message(recipient, message_id, ciphertext);
-        assert!(result.is_ok(), "store_offline_message should succeed: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "store_offline_message should succeed: {:?}",
+            result.err()
+        );
+
         // Clean up
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

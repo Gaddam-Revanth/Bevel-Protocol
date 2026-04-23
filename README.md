@@ -22,7 +22,7 @@
 
 Bevel Protocol is a high-performance, privacy-first decentralized messaging protocol built in Rust. It implements the **DecentraMail Protocol (DMP)** stack, designed to provide end-to-end encrypted, metadata-resistant communication over a peer-to-peer network.
 
-By combining **Sphinx-inspired onion routing** with a modular **libp2p** core, Bevel ensures that not only is the content of your messages secure, but the very metadata of who is talking to whom remains shielded from network observers.
+By combining **Sphinx-inspired onion routing** with a modular **libp2p** core, Bevel ensures that not only is the content of your messages secure, but the very metadata of who is talking to whom remains shielded from network observers. Bevel is designed to be the foundational layer for the next generation of private, censorship-resistant communication applications.
 
 ## 🏗 Architecture (The DMP Stack)
 
@@ -39,28 +39,28 @@ Bevel is organized into a 6-layer protocol stack, ensuring clean separation of c
 
 ## 🚀 Key Features
 
-- **🛡 Metadata Resistance**: Headers are stripped of identifying information until they reach the intended recipient or relay hop.
-- **🏷 Bevel Name Service (BNS)**: Support for human-readable handles like `user@bevel.com` through a decentralized DHT-based naming system.
-- **🧅 Advanced Onion Routing**: Support for up to 8 hops with ephemeral key exchange for every circuit.
-- **⚡ Performance**: Built with `Tokio` for asynchronous I/O and `libp2p` for efficient networking.
-- **💾 Durable Storage**: Local database for offline message queuing and identity management.
-- **📬 Store and Forward Protocol (SFP)**: Reliable offline messaging architecture with verifiable cryptographic manifests.
-- **🌐 Bootstrap Nodes**: Decentralized peer discovery via Kademlia DHT bootstrapping for reliable network entry.
-- **🧪 Built-in Auditing**: A dedicated audit suite for adversarial testing and cryptographic verification.
-- **🕸 WebAssembly Ready**: Bridge layers to run Bevel nodes directly in modern browsers.
+- **🛡 Metadata Resistance**: Onion-routed headers are stripped of identifying information at every hop, preventing traffic analysis.
+- **🏷 Bevel Name Service (BNS)**: Decentralized DHT-based naming (e.g., `user@bevel.net`) with PoW-protected registration.
+- **📁 Rich Media Sharing**: End-to-end encrypted sharing of files and entire folders with native manifest support and chunked P2P distribution.
+- **🔍 Encrypted Local Search**: Instant keyword search over your entire encrypted message history without server-side assistance.
+- **🔄 Multi-Device Sync**: P2P gossip protocol that keeps message history and contacts in sync across all your devices automatically.
+- **� Social Recovery**: Identity backup using **Shamir's Secret Sharing (SSS)**. Split your recovery seed into shards to prevent total data loss.
+- **🚫 Advanced Spam Defense**: Multi-layered protection using Proof-of-Work (PoW) nonces, trust scores, and decentralized reputation tracking.
+- **📬 Store and Forward (SFP)**: Reliable offline messaging architecture with verifiable cryptographic manifests.
+- **🧪 Built-in Auditing**: A dedicated audit suite for adversarial testing, cryptographic verification, and protocol hardening.
 
 ## 📦 Crates
 
-The workspace is divided into specialized crates:
+The workspace is divided into specialized crates for maximum modularity:
 
-- [**`bevel-crypto`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-crypto): Core cryptographic primitives with `Zeroize` support for memory safety.
+- [**`bevel-crypto`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-crypto): Core cryptographic primitives, Double Ratchet, X3DH, and Social Recovery (SSS).
 - [**`bevel-protocol`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-protocol): Common types, canonical serialization, and DMP header definitions.
 - [**`bevel-onion`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-onion): Layer 6 implementation, handling circuit building and layer peeling.
-- [**`bevel-p2p`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-p2p): libp2p integration, including DHT discovery and relay logic.
-- [**`bevel-storage`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-storage): Persistent database layer using `Sled`.
-- [**`bevel-audit`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-audit): Security verification tools and adversarial simulation.
-- [**`bevel-media`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-media): Media handling and protocol extensions for rich content.
-- [**`bevel-wasm`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-wasm): WASM bindings for web client integration.
+- [**`bevel-p2p`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-p2p): libp2p integration, DHT discovery, and multi-device sync gossip.
+- [**`bevel-storage`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-storage): Persistent database layer using `Sled` with local encrypted search indexing.
+- [**`bevel-media`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-media): Media handling, file/folder chunking, and rich content encryption.
+- [**`bevel-audit`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-audit): Comprehensive security verification tools and adversarial simulation.
+- [**`bevel-wasm`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-wasm): WASM bindings for integrating Bevel into web and mobile environments.
 
 ## 🛠 Getting Started
 
@@ -83,7 +83,7 @@ cargo test --workspace
 
 ### Security Audit
 
-To run the comprehensive security audit suite:
+To run the comprehensive security audit suite (verified 33+ security checks):
 
 ```bash
 cargo run -p bevel-audit
@@ -96,7 +96,8 @@ Bevel is designed with a "Zero Vulnerability" philosophy. Recent hardening measu
 - **Replay Protection**: Built-in caches to detect and drop replayed onion cells.
 - **Memory Safety**: Use of `Zeroize` to ensure sensitive cryptographic keys are wiped from memory after use.
 - **Cryptographic Signatures**: Protection against manifest tampering and DHT spoofing using Ed25519 signatures.
-- **Adversarial Testing**: Continuous fuzzing of protocol headers and onion layers.
+- **Reputation Tracking**: Local trust scores to prevent Sybil attacks and spam from unknown peers.
+- **GPA Mitigation**: Cover traffic (chaff) and randomized cell delays to resist Global Passive Adversaries.
 
 ---
 

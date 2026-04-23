@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
 pub const DMP_MAGIC: [u8; 4] = [0x44, 0x4D, 0x50, 0x00];
@@ -21,18 +21,17 @@ pub struct OnionCellHeader {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct DmpHeader {
-    pub magic: [u8; 4],            // 0x444D5000
-    pub version: u8,               // 0x01
-    pub layer_id: u8,              // 0x01-0x06
-    pub protocol_id: u16,          // Sub-protocol identifier
-    pub payload_length: u32,       // Big-endian length
-    pub sender_addr_hash: [u8; 32], // SHA-256 of sender public key
+    pub magic: [u8; 4],                // 0x444D5000
+    pub version: u8,                   // 0x01
+    pub layer_id: u8,                  // 0x01-0x06
+    pub protocol_id: u16,              // Sub-protocol identifier
+    pub payload_length: u32,           // Big-endian length
+    pub sender_addr_hash: [u8; 32],    // SHA-256 of sender public key
     pub recipient_addr_hash: [u8; 32], // SHA-256 of recipient public key
-    pub timestamp: u64,            // Unix epoch ms (rounded to 10s)
+    pub timestamp: u64,                // Unix epoch ms (rounded to 10s)
     #[serde(with = "BigArray")]
-    pub signature: [u8; 64],       // Ed25519 sig
+    pub signature: [u8; 64], // Ed25519 sig
 }
-
 
 impl Default for DmpHeader {
     fn default() -> Self {
@@ -110,16 +109,12 @@ pub struct DmpMessageFlags {
 
 impl DmpMessage {
     /// Factory method to create a new DMP message with a cryptographically secure message ID.
-    pub fn new(
-        subject: Option<String>,
-        body: DmpMessageBody,
-        flags: DmpMessageFlags,
-    ) -> Self {
+    pub fn new(subject: Option<String>, body: DmpMessageBody, flags: DmpMessageFlags) -> Self {
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let uuid: [u8; 16] = rng.gen();
         let message_id = hex::encode(uuid); // 128-bit random ID
-        
+
         Self {
             dmp_msg_version: "1.0".to_string(),
             message_id,
@@ -132,14 +127,14 @@ impl DmpMessage {
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
-                    .as_millis() as u64
+                    .as_millis() as u64,
             ),
             flags,
         }
     }
 }
 
-/// A manifest for an offline message (SFP). 
+/// A manifest for an offline message (SFP).
 /// Stored on the DHT to allow discovery of all chunks.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DmpMessageManifest {
@@ -150,7 +145,7 @@ pub struct DmpMessageManifest {
     pub sender_masked: [u8; 32],   // Blinded sender identifier
     pub sender_pub_key: [u8; 32],  // Public key for verifying the signature
     #[serde(with = "BigArray")]
-    pub signature: [u8; 64],       // Ed25519 signature by sender
+    pub signature: [u8; 64], // Ed25519 signature by sender
     pub pow_nonce: u64,            // Anti-Sybil Proof of Work nonce
 }
 
@@ -170,7 +165,7 @@ impl DmpMessageManifest {
     }
 
     pub fn mine_pow(&mut self, difficulty: u32) {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         loop {
             let data = self.pow_hash_data();
             let mut hasher = Sha256::new();
@@ -184,7 +179,7 @@ impl DmpMessageManifest {
     }
 
     pub fn verify_pow(&self, difficulty: u32) -> bool {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let data = self.pow_hash_data();
         let mut hasher = Sha256::new();
         hasher.update(&data);
@@ -198,8 +193,6 @@ pub struct DmpChunk {
     pub chunk_index: u32,
     pub data: Vec<u8>,
 }
-
-
 
 /// Delivery status for Layer 4 (DRP).
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
@@ -372,13 +365,15 @@ impl BnsRecord {
         }
         let user = parts[0];
         let domain = parts[1];
-        
-        !user.is_empty() 
-            && !domain.is_empty() 
-            && domain.contains('.') 
-            && !domain.starts_with('.') 
+
+        !user.is_empty()
+            && !domain.is_empty()
+            && domain.contains('.')
+            && !domain.starts_with('.')
             && !domain.ends_with('.')
-            && handle.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '@')
+            && handle
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '@')
     }
 
     /// Prepares the data for signing/verification.
@@ -397,7 +392,7 @@ impl BnsRecord {
     }
 
     pub fn mine_pow(&mut self, difficulty: u32) {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         loop {
             let data = self.pow_hash_data();
             let mut hasher = Sha256::new();
@@ -411,7 +406,7 @@ impl BnsRecord {
     }
 
     pub fn verify_pow(&self, difficulty: u32) -> bool {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let data = self.pow_hash_data();
         let mut hasher = Sha256::new();
         hasher.update(&data);
@@ -456,7 +451,7 @@ mod tests {
         let header = DmpHeader::default();
         let encoded = bincode::serialize(&header).unwrap();
         assert_eq!(encoded.len(), 148);
-        
+
         let decoded: DmpHeader = bincode::deserialize(&encoded).unwrap();
         assert_eq!(decoded, header);
     }
@@ -473,16 +468,16 @@ mod tests {
         let payload = vec![0u8; 500];
         let padded = pad_payload(payload);
         assert_eq!(padded.len(), 1024);
-        
+
         let payload2 = vec![0u8; 1024];
         let padded2 = pad_payload(payload2);
         assert_eq!(padded2.len(), 1024); // No extra padding needed
-        
+
         let payload3 = vec![0u8; 1025];
         let padded3 = pad_payload(payload3);
         assert_eq!(padded3.len(), 2048);
     }
-    
+
     #[test]
     fn test_json_serialization() {
         let msg = DmpMessage {
@@ -503,11 +498,11 @@ mod tests {
                 expiry_seconds: None,
             },
         };
-        
+
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("msg_999"));
         assert!(json.contains("Test JSON"));
-        
+
         let deserialized: DmpMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.message_id, msg.message_id);
     }
@@ -526,12 +521,12 @@ mod tests {
         let handle = "alice@bevel.com";
         let addr = "dmp1-test-addr";
         let ts = 123456789;
-        
+
         let data1 = BnsRecord::signing_data(handle, addr, ts);
         let data2 = BnsRecord::signing_data(handle, addr, ts);
-        
+
         assert_eq!(data1, data2);
-        
+
         let data3 = BnsRecord::signing_data("bob@bevel.com", addr, ts);
         assert_ne!(data1, data3);
     }

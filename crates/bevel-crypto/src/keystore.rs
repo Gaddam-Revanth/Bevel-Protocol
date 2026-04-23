@@ -1,6 +1,6 @@
 use crate::BevelIdentity;
 use aes_gcm::{
-    aead::{Aead, Payload, KeyInit},
+    aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Nonce as GcmNonce,
 };
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -108,7 +108,13 @@ impl IdentityKeystore {
         let gcm_nonce = GcmNonce::from_slice(&nonce);
 
         let ciphertext = cipher
-            .encrypt(gcm_nonce, Payload { msg: data, aad: &[] })
+            .encrypt(
+                gcm_nonce,
+                Payload {
+                    msg: data,
+                    aad: &[],
+                },
+            )
             .map_err(|_| "Encryption failed")?;
 
         Ok(EncryptedBlob {
@@ -118,13 +124,22 @@ impl IdentityKeystore {
         })
     }
 
-    fn decrypt_blob(blob: &EncryptedBlob, pin: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    fn decrypt_blob(
+        blob: &EncryptedBlob,
+        pin: &str,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let key = Self::derive_key(pin, &blob.salt)?;
         let cipher = Aes256Gcm::new_from_slice(&key)?;
         let gcm_nonce = GcmNonce::from_slice(&blob.nonce);
 
         let plaintext = cipher
-            .decrypt(gcm_nonce, Payload { msg: &blob.ciphertext, aad: &[] })
+            .decrypt(
+                gcm_nonce,
+                Payload {
+                    msg: &blob.ciphertext,
+                    aad: &[],
+                },
+            )
             .map_err(|_| "Decryption failed")?;
 
         Ok(plaintext)
@@ -153,7 +168,7 @@ mod tests {
         let _ = std::fs::remove_file(&temp_path);
 
         let ks = IdentityKeystore::new(&temp_path);
-        
+
         let primary = BevelIdentity::generate().unwrap();
         let dummy = BevelIdentity::generate().unwrap();
 

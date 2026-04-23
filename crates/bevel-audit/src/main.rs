@@ -2,11 +2,11 @@
 //!
 //! Runs all audit modules and prints a structured vulnerability report.
 
-use bevel_audit::{Finding, Severity, Status};
+use bevel_audit::adversarial;
 use bevel_audit::crypto_audit;
 use bevel_audit::onion_audit;
 use bevel_audit::protocol_audit;
-use bevel_audit::adversarial;
+use bevel_audit::{Finding, Severity, Status};
 
 fn main() {
     print_banner();
@@ -55,7 +55,10 @@ fn print_banner() {
 
 fn print_section_results(findings: &[Finding]) {
     for f in findings {
-        println!("  {} {} \x1b[1m{}\x1b[0m  ({})", f.status, f.severity, f.id, f.title);
+        println!(
+            "  {} {} \x1b[1m{}\x1b[0m  ({})",
+            f.status, f.severity, f.id, f.title
+        );
         println!("       → {}", f.description);
         if f.status != Status::Passed {
             println!("       \x1b[33m⚑  Fix: {}\x1b[0m", f.recommendation);
@@ -65,13 +68,31 @@ fn print_section_results(findings: &[Finding]) {
 }
 
 fn print_summary(findings: &[Finding]) {
-    let critical = findings.iter().filter(|f| f.severity == Severity::Critical && f.status == Status::Confirmed).count();
-    let high     = findings.iter().filter(|f| f.severity == Severity::High     && f.status == Status::Confirmed).count();
-    let medium   = findings.iter().filter(|f| f.severity == Severity::Medium   && f.status == Status::Confirmed).count();
-    let low      = findings.iter().filter(|f| f.severity == Severity::Low      && f.status == Status::Confirmed).count();
-    let known    = findings.iter().filter(|f| f.status == Status::KnownLimitation).count();
-    let passed   = findings.iter().filter(|f| f.status == Status::Passed).count();
-    let total    = findings.len();
+    let critical = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Critical && f.status == Status::Confirmed)
+        .count();
+    let high = findings
+        .iter()
+        .filter(|f| f.severity == Severity::High && f.status == Status::Confirmed)
+        .count();
+    let medium = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Medium && f.status == Status::Confirmed)
+        .count();
+    let low = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Low && f.status == Status::Confirmed)
+        .count();
+    let known = findings
+        .iter()
+        .filter(|f| f.status == Status::KnownLimitation)
+        .count();
+    let passed = findings
+        .iter()
+        .filter(|f| f.status == Status::Passed)
+        .count();
+    let total = findings.len();
 
     println!("\x1b[1;35m");
     println!("╔══════════════════════════════════════════════════════════════╗");

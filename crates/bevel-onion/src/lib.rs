@@ -10,15 +10,15 @@
 //! - **Traffic resistance**: Wire output padded to multiples of `ONION_CELL_SIZE` (512 B).
 //! - **Forward secrecy**: Ephemeral secrets are dropped after use; no long-term exposure.
 
-use x25519_dalek::{StaticSecret, PublicKey};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashSet, VecDeque};
+use x25519_dalek::{PublicKey, StaticSecret};
 
 /// Wire-cell size used for traffic-analysis resistance. All wire output is padded
 /// to a multiple of this value.
@@ -160,7 +160,8 @@ impl OnionRouter {
             v.extend_from_slice(payload);
             v
         };
-        let mut current_cell = Self::encrypt_layer(&hops[hops.len() - 1], &exit_plaintext, &mut rng)?;
+        let mut current_cell =
+            Self::encrypt_layer(&hops[hops.len() - 1], &exit_plaintext, &mut rng)?;
 
         // ── Outer layers: relay hops (second-to-last → first) ─────────────
         // Plaintext format: [0x01 (relay flag)] [peer_id_len: 1B] [peer_id bytes] ++ [inner cell bytes]
@@ -173,11 +174,12 @@ impl OnionRouter {
             let inner_cell_bytes = bincode::serialize(&current_cell)?;
 
             let relay_plaintext = {
-                let mut v = Vec::with_capacity(2 + next_peer_id_bytes.len() + inner_cell_bytes.len());
-                v.push(0x01u8);                          // relay flag
+                let mut v =
+                    Vec::with_capacity(2 + next_peer_id_bytes.len() + inner_cell_bytes.len());
+                v.push(0x01u8); // relay flag
                 v.push(next_peer_id_bytes.len() as u8); // next peer ID length
                 v.extend_from_slice(next_peer_id_bytes); // next peer ID
-                v.extend_from_slice(&inner_cell_bytes);  // inner cell
+                v.extend_from_slice(&inner_cell_bytes); // inner cell
                 v
             };
 
@@ -216,7 +218,9 @@ impl OnionRouter {
         let nonce = Nonce::from_slice(&cell.nonce);
         let plaintext = cipher
             .decrypt(nonce, cell.ciphertext.as_slice())
-            .map_err(|_| "Onion layer authentication failed — cell may be tampered or key is wrong")?;
+            .map_err(|_| {
+                "Onion layer authentication failed — cell may be tampered or key is wrong"
+            })?;
 
         if plaintext.is_empty() {
             return Err("Decrypted plaintext is empty".into());
@@ -259,7 +263,10 @@ impl OnionRouter {
     ///
     /// Generates N ephemeral relay identities, builds the circuit, peels all layers,
     /// and asserts the final payload matches the original.  Returns the hop trace.
-    pub fn verify_circuit(payload: &[u8], hop_count: usize) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    pub fn verify_circuit(
+        payload: &[u8],
+        hop_count: usize,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         if hop_count == 0 || hop_count > MAX_HOPS {
             return Err(format!("hop_count must be 1..={}", MAX_HOPS).into());
         }
@@ -293,9 +300,16 @@ impl OnionRouter {
             let result = Self::peel_layer(&current_cell, secret, &mut mock_cache)?;
 
             if result.is_exit {
-                trace.push(format!("Hop {} [EXIT] — payload decrypted ({} bytes)", i, result.inner_data.len()));
+                trace.push(format!(
+                    "Hop {} [EXIT] — payload decrypted ({} bytes)",
+                    i,
+                    result.inner_data.len()
+                ));
                 if result.inner_data != payload {
-                    return Err("Circuit verification FAILED: decrypted payload does not match original".into());
+                    return Err(
+                        "Circuit verification FAILED: decrypted payload does not match original"
+                            .into(),
+                    );
                 }
                 return Ok(trace);
             } else {
@@ -394,10 +408,17 @@ mod tests {
         let secret = StaticSecret::from(secret_bytes);
         let pub_key = PublicKey::from(&secret);
 
-        let hops = vec![OnionHopSpec { relay_pub_key: pub_key.to_bytes(), peer_id: "r0".into() }];
+        let hops = vec![OnionHopSpec {
+            relay_pub_key: pub_key.to_bytes(),
+            peer_id: "r0".into(),
+        }];
         let cell = OnionRouter::build_circuit(&hops, payload).unwrap();
         let wire = cell.to_wire_padded();
-        assert_eq!(wire.len() % ONION_CELL_SIZE, 0, "Wire size must be a multiple of 512");
+        assert_eq!(
+            wire.len() % ONION_CELL_SIZE,
+            0,
+            "Wire size must be a multiple of 512"
+        );
     }
 
     #[test]
@@ -409,7 +430,10 @@ mod tests {
         let secret = StaticSecret::from(secret_bytes);
         let pub_key = PublicKey::from(&secret);
 
-        let hops = vec![OnionHopSpec { relay_pub_key: pub_key.to_bytes(), peer_id: "r0".into() }];
+        let hops = vec![OnionHopSpec {
+            relay_pub_key: pub_key.to_bytes(),
+            peer_id: "r0".into(),
+        }];
         let mut cell = OnionRouter::build_circuit(&hops, payload).unwrap();
 
         // Flip a byte in the ciphertext — GCM auth tag should reject this
@@ -427,13 +451,18 @@ mod tests {
         let payload = b"Wrong key test";
         let mut rng = rand::thread_rng();
 
-        let mut s1 = [0u8; 32]; rng.fill_bytes(&mut s1);
-        let mut s2 = [0u8; 32]; rng.fill_bytes(&mut s2);
+        let mut s1 = [0u8; 32];
+        rng.fill_bytes(&mut s1);
+        let mut s2 = [0u8; 32];
+        rng.fill_bytes(&mut s2);
         let correct_secret = StaticSecret::from(s1);
-        let wrong_secret   = StaticSecret::from(s2);
+        let wrong_secret = StaticSecret::from(s2);
         let pub_key = PublicKey::from(&correct_secret);
 
-        let hops = vec![OnionHopSpec { relay_pub_key: pub_key.to_bytes(), peer_id: "r0".into() }];
+        let hops = vec![OnionHopSpec {
+            relay_pub_key: pub_key.to_bytes(),
+            peer_id: "r0".into(),
+        }];
         let cell = OnionRouter::build_circuit(&hops, payload).unwrap();
 
         let mut cache = ReplayCache::new();
@@ -445,10 +474,12 @@ mod tests {
     fn test_max_hops_enforced() {
         let payload = b"Max hops";
         // 9 hops should be rejected
-        let hops: Vec<OnionHopSpec> = (0..9).map(|i| OnionHopSpec {
-            relay_pub_key: [i as u8; 32],
-            peer_id: format!("r{}", i),
-        }).collect();
+        let hops: Vec<OnionHopSpec> = (0..9)
+            .map(|i| OnionHopSpec {
+                relay_pub_key: [i as u8; 32],
+                peer_id: format!("r{}", i),
+            })
+            .collect();
         let result = OnionRouter::build_circuit(&hops, payload);
         assert!(result.is_err());
     }

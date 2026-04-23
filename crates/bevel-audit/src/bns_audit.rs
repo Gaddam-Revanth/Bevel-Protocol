@@ -1,8 +1,8 @@
 //! BNS Security Audit: Handles, Registration, and Signature Verification.
 
-use bevel_protocol::{BnsRecord};
-use bevel_crypto::BevelIdentity;
 use crate::{Finding, Severity, Status};
+use bevel_crypto::BevelIdentity;
+use bevel_protocol::BnsRecord;
 
 pub fn run() -> Vec<Finding> {
     vec![
@@ -33,8 +33,11 @@ fn test_handle_validation_rules() -> Finding {
             title: "BNS Handle Validation".into(),
             severity: Severity::Medium,
             status: Status::Confirmed,
-            description: "BNS handle validation failed to correctly filter malformed or invalid handles.".into(),
-            recommendation: "Implement a robust regex for handle validation in bevel-protocol.".into(),
+            description:
+                "BNS handle validation failed to correctly filter malformed or invalid handles."
+                    .into(),
+            recommendation: "Implement a robust regex for handle validation in bevel-protocol."
+                .into(),
         }
     }
 }
@@ -43,19 +46,19 @@ fn test_bns_record_cryptographic_integrity() -> Finding {
     let id = BevelIdentity::generate().unwrap();
     let handle = "audit@bevel.com";
     let timestamp = 1713600000;
-    
+
     let signing_data = BnsRecord::signing_data(handle, &id.address, timestamp);
     let signature = id.sign(&signing_data).unwrap();
-    
+
     // Simulation of verification logic
-    // In a real scenario, the resolver would use the public key derived from the address (if possible) 
+    // In a real scenario, the resolver would use the public key derived from the address (if possible)
     // or the record would include the public key for verification.
-    
+
     // For now, we test if the signature is reproducible and matches the ID's verifying key.
-    use ed25519_dalek::{Verifier, Signature};
+    use ed25519_dalek::{Signature, Verifier};
     let vk = id.public_key().unwrap();
     let sig = Signature::from_bytes(&signature);
-    
+
     if vk.verify(&signing_data, &sig).is_ok() {
         Finding {
             id: "BVL-BNS-02".into(),
