@@ -1,0 +1,4 @@
+[build]
+# Build artifacts outside of the project/Downloads folder to avoid
+# Windows Defender file-locking issues (os error 32).
+target-dir = "C:\\cargo-build\\bevel-protocol"

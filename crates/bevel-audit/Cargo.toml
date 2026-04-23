@@ -1,0 +1,24 @@
+[package]
+name    = "bevel-audit"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bevel-audit"
+path = "src/main.rs"
+
+[dependencies]
+bevel-crypto   = { path = "../bevel-crypto"   }
+bevel-protocol = { path = "../bevel-protocol" }
+bevel-onion    = { path = "../bevel-onion"    }
+bevel-p2p      = { path = "../bevel-p2p"      }
+x25519-dalek   = { workspace = true }
+ed25519-dalek  = { workspace = true }
+sha2           = { workspace = true }
+hmac           = { workspace = true }
+aes-gcm        = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+bincode        = { workspace = true }
+rand           = { workspace = true }
+hex            = { workspace = true }

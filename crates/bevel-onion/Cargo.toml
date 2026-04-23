@@ -1,0 +1,12 @@
+[package]
+name = "bevel-onion"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+x25519-dalek  = { workspace = true }
+aes-gcm       = { workspace = true }
+serde         = { workspace = true }
+rand          = { workspace = true }
+sha2          = { workspace = true }
+bincode       = { workspace = true }

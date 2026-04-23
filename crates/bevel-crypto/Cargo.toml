@@ -1,0 +1,21 @@
+[package]
+name = "bevel-crypto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+ed25519-dalek = { workspace = true }
+x25519-dalek = { workspace = true }
+aes-gcm = { workspace = true }
+bip39 = { workspace = true }
+getrandom = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+hmac = { workspace = true }
+zeroize = { workspace = true }
+serde_json = { workspace = true }
+
+
