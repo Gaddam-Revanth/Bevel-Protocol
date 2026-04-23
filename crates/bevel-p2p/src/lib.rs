@@ -369,7 +369,7 @@ impl BevelNode {
 
         Ok(packet)
     }
-}
+
     /// Triggers the Kademlia bootstrap process.
     pub fn bootstrap(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.swarm.behaviour_mut().kademlia.bootstrap()
