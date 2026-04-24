@@ -60,7 +60,6 @@ The workspace is divided into specialized crates for maximum modularity:
 - [**`bevel-storage`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-storage): Persistent database layer using `Sled` with local encrypted search indexing.
 - [**`bevel-media`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-media): Media handling, file/folder chunking, and rich content encryption.
 - [**`bevel-audit`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-audit): Comprehensive security verification tools and adversarial simulation.
-- [**`bevel-wasm`**](file:///c:/Users/Revanth/Downloads/Bevel%20Protocol/crates/bevel-wasm): WASM bindings for integrating Bevel into web and mobile environments.
 
 ## 🛠 Getting Started
 
